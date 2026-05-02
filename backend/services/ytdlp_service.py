@@ -44,13 +44,18 @@ IG_HEADERS = {
     'Sec-Fetch-Site': 'none',
 }
 
+import random
+
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:126.0) Gecko/20100101 Firefox/126.0'
+]
+
 GENERIC_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-    'Accept-Language': 'en-US,en;q=0.9',
-    'Sec-Ch-Ua': '"Google Chrome";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
-    'Sec-Ch-Ua-Mobile': '?0',
-    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
     'Sec-Fetch-Dest': 'document',
     'Sec-Fetch-Mode': 'navigate',
     'Sec-Fetch-Site': 'none',
@@ -91,16 +96,25 @@ def _clean_error(e: Exception) -> str:
 
 
 def _get_ydl_opts_base(extra: dict = None) -> dict:
+    headers = GENERIC_HEADERS.copy()
+    headers['User-Agent'] = random.choice(USER_AGENTS)
+    
     opts = {
         'quiet': True,
         'no_warnings': True,
         'noprogress': True,
         'extract_flat': False,
-        'socket_timeout': 45,
-        'retries': 5,
-        'http_headers': GENERIC_HEADERS.copy(),
+        'socket_timeout': 60,
+        'retries': 10,
+        'http_headers': headers,
         'nocheckcertificate': True,
         'geo_bypass': True,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web'],
+                'skip': ['dash', 'hls']
+            }
+        },
         'add_header': [
             'Accept-Encoding: identity',
             'Connection: keep-alive'
@@ -172,15 +186,15 @@ def extract_metadata(url: str, platform: str, content_type: str) -> dict:
 
     except yt_dlp.utils.DownloadError as e:
         mapped = _map_download_error(e)
-        if platform in ('facebook', 'pinterest') and not isinstance(mapped, PermissionError):
+        if platform in ('facebook', 'pinterest', 'instagram') and not isinstance(mapped, PermissionError):
             return _extract_og_metadata(url, platform, content_type)
         raise mapped
     except (ValueError, PermissionError, ConnectionError) as e:
-        if platform in ('facebook', 'pinterest') and not isinstance(e, PermissionError):
+        if platform in ('facebook', 'pinterest', 'instagram') and not isinstance(e, PermissionError):
             return _extract_og_metadata(url, platform, content_type)
         raise
     except Exception as e:
-        if platform in ('facebook', 'pinterest'):
+        if platform in ('facebook', 'pinterest', 'instagram'):
             return _extract_og_metadata(url, platform, content_type)
         raise ValueError(f"Failed to extract media info: {_clean_error(e)}")
 
@@ -232,11 +246,13 @@ def _extract_og_metadata(url: str, platform: str, content_type: str) -> dict:
         formats = [
             {'id': 'video_best', 'label': 'Download Video (MP4)', 'ext': 'mp4', 'type': 'video'},
         ]
-        if platform == 'pinterest':
-            formats.append({'id': 'pin_image', 'label': 'Download Thumbnail (JPG)', 'ext': 'jpg', 'type': 'image'})
+        if platform in ('pinterest', 'instagram', 'facebook', 'tiktok'):
+            formats.append({'id': 'og_image', 'label': 'Download Thumbnail (JPG)', 'ext': 'jpg', 'type': 'image'})
     else:
         if platform == 'facebook':
             formats = [{'id': 'fb_image', 'label': 'Download Photo (JPG)', 'ext': 'jpg', 'type': 'image'}]
+        elif platform == 'instagram':
+            formats = [{'id': 'ig_image', 'label': 'Download Photo (JPG)', 'ext': 'jpg', 'type': 'image'}]
         else:
             formats = [{'id': 'pin_image', 'label': 'Download Image (JPG)', 'ext': 'jpg', 'type': 'image'}]
 
@@ -671,6 +687,12 @@ def download_media(url: str, format_id: str, platform: str, content_type: str,
 
         if format_id == 'fb_image':
             return _download_og_image(url, timestamp, FB_HEADERS)
+
+        if format_id == 'ig_image':
+            return _download_og_image(url, timestamp, IG_HEADERS)
+
+        if format_id == 'og_image':
+            return _download_og_image(url, timestamp, GENERIC_HEADERS)
 
         if format_id == 'pin_image':
             return _download_og_image(url, timestamp, PINTEREST_HEADERS)
