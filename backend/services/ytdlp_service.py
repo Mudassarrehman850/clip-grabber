@@ -99,6 +99,17 @@ def _get_ydl_opts_base(extra: dict = None) -> dict:
     headers = GENERIC_HEADERS.copy()
     headers['User-Agent'] = random.choice(USER_AGENTS)
     
+    # Handle YouTube Cookies from Secrets
+    cookie_path = None
+    yt_cookies = os.environ.get('YT_COOKIES')
+    if yt_cookies:
+        cookie_path = '/tmp/youtube_cookies.txt'
+        try:
+            with open(cookie_path, 'w') as f:
+                f.write(yt_cookies)
+        except Exception:
+            cookie_path = None
+
     opts = {
         'quiet': True,
         'no_warnings': True,
@@ -109,6 +120,7 @@ def _get_ydl_opts_base(extra: dict = None) -> dict:
         'http_headers': headers,
         'nocheckcertificate': True,
         'geo_bypass': True,
+        'cookiefile': cookie_path,
         'extractor_args': {
             'youtube': {
                 'player_client': ['android', 'web'],
