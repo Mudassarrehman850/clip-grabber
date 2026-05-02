@@ -119,6 +119,8 @@ def _get_ydl_opts_base(extra: dict = None) -> dict:
         'retries': 10,
         'http_headers': headers,
         'nocheckcertificate': True,
+        'legacy_server_connect': True,
+        'source_address': '0.0.0.0', # Force IPv4
         'geo_bypass': True,
         'cookiefile': cookie_path,
         'extractor_args': {
