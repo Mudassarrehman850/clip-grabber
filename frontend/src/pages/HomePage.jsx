@@ -19,6 +19,22 @@ const AD_SLOTS = {
   sidebar:      process.env.REACT_APP_AD_SLOT_SIDE   || '',
 };
 
+function BetaBanner() {
+  return (
+    <div className="relative z-50 bg-brand/10 border-b border-brand/20 backdrop-blur-md">
+      <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-center gap-3 text-center">
+        <span className="flex h-2 w-2 relative flex-shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-brand"></span>
+        </span>
+        <p className="text-[0.65rem] sm:text-xs font-black text-text-primary uppercase tracking-[0.1em]">
+          <span className="text-brand">Notice:</span> Server upgrade in progress. YouTube & Instagram downloads may be unstable.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const { state, analyze, download, reset } = useDownloader();
   const { status, metadata, error, downloadingFormatId, downloadProgress } = state;
@@ -31,6 +47,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-bg-page relative transition-colors duration-500 overflow-x-hidden">
+      <BetaBanner />
       
       {/* Dynamic Background Elements */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
