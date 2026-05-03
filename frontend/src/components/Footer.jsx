@@ -96,6 +96,14 @@ export default function Footer() {
                     <p className="text-[0.65rem] font-black uppercase tracking-[0.2em] text-brand mb-1">Direct Email</p>
                     <p className="text-lg font-bold text-text-primary">mudassar1rehman@gmail.com</p>
                 </a>
+                
+                <a href="https://www.linkedin.com/in/mudassar-rehman-2558253b2" target="_blank" rel="noreferrer" className="group block p-8 rounded-3xl bg-[#0077B5]/[0.03] border-2 border-[#0077B5]/10 hover:border-[#0077B5]/40 transition-all text-center">
+                    <div className="w-12 h-12 rounded-2xl bg-[#0077B5]/10 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
+                        <svg width="24" height="24" fill="#0077B5" viewBox="0 0 24 24"><path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
+                    </div>
+                    <p className="text-[0.65rem] font-black uppercase tracking-[0.2em] text-[#0077B5] mb-1">Professional Network</p>
+                    <p className="text-lg font-bold text-text-primary">Connect on LinkedIn</p>
+                </a>
             </div>
 
             <div className="flex items-center justify-center gap-6 pt-4">
