@@ -4,7 +4,7 @@ flask-limiter==3.8.0
 yt-dlp==2026.8.19
 requests==2.32.3
 instaloader==4.13.1
-Pillow==10.4.0
+Pillow==12.3.0
 beautifulsoup4==4.12.3
 certifi==2024.8.30
 gunicorn==22.0.0
