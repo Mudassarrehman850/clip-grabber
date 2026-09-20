@@ -2,7 +2,7 @@ flask==3.0.3
 flask-cors==4.0.1
 flask-limiter==3.8.0
 yt-dlp==2026.8.19
-requests==2.32.3
+requests==2.34.2
 instaloader==4.13.1
 Pillow==10.4.0
 beautifulsoup4==4.12.3
