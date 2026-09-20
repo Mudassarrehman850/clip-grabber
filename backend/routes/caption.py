@@ -1,6 +1,12 @@
+import logging
+
 from flask import Blueprint, request, jsonify, Response
 from utils.url_detector import detect_platform, detect_content_type, validate_url
+from utils.timeout import run_with_timeout, OperationTimeoutError
 from services.ytdlp_service import extract_metadata
+from config import EXTRACTION_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 caption_bp = Blueprint('caption', __name__)
 
@@ -31,7 +37,7 @@ def get_caption():
     content_type = detect_content_type(clean_url, platform)
 
     try:
-        metadata = extract_metadata(clean_url, platform, content_type)
+        metadata = run_with_timeout(extract_metadata, clean_url, platform, content_type, timeout=EXTRACTION_TIMEOUT)
         caption = metadata.get('caption', {})
 
         return jsonify({
@@ -45,7 +51,11 @@ def get_caption():
         return jsonify({'error': str(e), 'code': 'PRIVATE_CONTENT'}), 403
     except ValueError as e:
         return jsonify({'error': str(e), 'code': 'EXTRACTION_FAILED'}), 400
+    except OperationTimeoutError:
+        logger.warning('Caption fetch timed out for %s', clean_url)
+        return jsonify({'error': 'This took too long. Please try again.', 'code': 'TIMEOUT'}), 504
     except Exception as e:
+        logger.exception('Unexpected error fetching caption for %s', clean_url)
         return jsonify({'error': f'Failed: {str(e)[:100]}', 'code': 'UNKNOWN'}), 500
 
 
@@ -72,7 +82,7 @@ def export_caption():
     content_type = detect_content_type(clean_url, platform)
 
     try:
-        metadata = extract_metadata(clean_url, platform, content_type)
+        metadata = run_with_timeout(extract_metadata, clean_url, platform, content_type, timeout=EXTRACTION_TIMEOUT)
         caption = metadata.get('caption', {})
         title = metadata.get('title', 'untitled')
         uploader = metadata.get('uploader', '')
@@ -138,5 +148,9 @@ def export_caption():
         return jsonify({'error': str(e)}), 403
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
+    except OperationTimeoutError:
+        logger.warning('Caption export timed out for %s', clean_url)
+        return jsonify({'error': 'This took too long. Please try again.'}), 504
     except Exception as e:
+        logger.exception('Unexpected error exporting caption for %s', clean_url)
         return jsonify({'error': f'Failed: {str(e)[:100]}'}), 500

@@ -4,38 +4,32 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0a0a0f" />
+    <meta name="theme-color" content="#0b0f1a" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.qrserver.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
     <!-- SEO Meta Tags -->
     <meta name="description" content="Free social media downloader. Download videos, reels, photos and audio from YouTube, Instagram, TikTok, Facebook and Pinterest. No signup required. MP4, MP3, JPG formats." />
     <meta name="keywords" content="social media downloader, youtube downloader, instagram downloader, tiktok downloader, facebook video downloader, pinterest downloader, download reels, download tiktok without watermark, free video downloader" />
     <meta name="robots" content="index, follow" />
     <meta name="author" content="ClipGrabber" />
-    <link rel="canonical" href="https://yourdomain.com" />
+    <link rel="canonical" href="%REACT_APP_SITE_URL%" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
     <meta property="og:title" content="ClipGrabber — Free Social Media Video Downloader" />
     <meta property="og:description" content="Download videos, reels and photos from YouTube, Instagram, TikTok, Facebook and Pinterest for free. No signup required." />
-    <meta property="og:url" content="https://yourdomain.com" />
-    <meta property="og:image" content="https://yourdomain.com/og-image.png" />
+    <meta property="og:url" content="%REACT_APP_SITE_URL%" />
+    <meta property="og:image" content="%REACT_APP_SITE_URL%/og-image.png" />
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="ClipGrabber — Free Social Media Downloader" />
     <meta name="twitter:description" content="Download from YouTube, Instagram, TikTok, Facebook and Pinterest instantly. Free, fast, no signup." />
-
-    <!-- Google AdSense — replace ca-pub-XXXXXXXXXXXXXXXX with your Publisher ID -->
-    <!-- Adsterra Popunder Placeholder — Replace YOUR_ADSTERRA_KEY with your real key -->
-    <script type="text/javascript">
-      // atOptions = { 'key': 'YOUR_ADSTERRA_KEY', 'format': 'iframe' };
-    </script>
-    <!-- <script src="//www.topcreativeformat.com/YOUR_ADSTERRA_KEY/invoke.js"></script> -->
-
-    <!-- PropellerAds Push Placeholder — Replace YOUR_ZONE_URL and ZONE_ID -->
-    <script>
-      // (function(d,z,s){s.src='https://'+d+'/'+z;try{(document.body||document.documentElement).appendChild(s)}catch(e){}})('YOUR_ZONE_URL', 'ZONE_ID', document.createElement('script'))
-    </script>
 
     <!-- Structured Data for Google -->
     <script type="application/ld+json">
@@ -44,7 +38,7 @@
       "@type": "WebApplication",
       "name": "ClipGrabber",
       "description": "Free social media video and image downloader for YouTube, Instagram, TikTok, Facebook and Pinterest",
-      "url": "https://yourdomain.com",
+      "url": "%REACT_APP_SITE_URL%",
       "applicationCategory": "UtilityApplication",
       "operatingSystem": "Web",
       "offers": {
@@ -56,6 +50,32 @@
     </script>
 
     <title>ClipGrabber — Free YouTube, Instagram, TikTok, Facebook & Pinterest Downloader</title>
+
+    <!--
+      Ad network loaders are injected conditionally at runtime so nothing
+      requests ads (or fails loudly) when the corresponding env var isn't
+      set — e.g. in local dev, previews, or before ad-network approval.
+    -->
+    <script>
+      (function () {
+        var adsenseClient = "%REACT_APP_ADSENSE_CLIENT%";
+        if (adsenseClient) {
+          var s = document.createElement('script');
+          s.async = true;
+          s.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=' + adsenseClient;
+          s.crossOrigin = 'anonymous';
+          document.head.appendChild(s);
+        }
+
+        var adsterraKey = "%REACT_APP_ADSTERRA_KEY%";
+        if (adsterraKey) {
+          var a = document.createElement('script');
+          a.async = true;
+          a.src = '//www.topcreativeformat.com/' + adsterraKey + '/invoke.js';
+          document.body.appendChild(a);
+        }
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

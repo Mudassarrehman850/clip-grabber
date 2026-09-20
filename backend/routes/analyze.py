@@ -1,6 +1,13 @@
+import logging
+
 from flask import Blueprint, request, jsonify
+
 from utils.url_detector import detect_platform, detect_content_type, validate_url
+from utils.timeout import run_with_timeout, OperationTimeoutError
 from services.ytdlp_service import extract_metadata
+from config import EXTRACTION_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 analyze_bp = Blueprint('analyze', __name__)
 
@@ -30,7 +37,7 @@ def analyze():
     content_type = detect_content_type(clean_url, platform)
 
     try:
-        metadata = extract_metadata(clean_url, platform, content_type)
+        metadata = run_with_timeout(extract_metadata, clean_url, platform, content_type, timeout=EXTRACTION_TIMEOUT)
         return jsonify({
             'success': True,
             'data': metadata,
@@ -48,5 +55,10 @@ def analyze():
     except ConnectionError as e:
         return jsonify({'error': str(e), 'code': 'RATE_LIMITED'}), 429
 
+    except OperationTimeoutError:
+        logger.warning('Analyze timed out for %s', clean_url)
+        return jsonify({'error': 'This took too long to analyze. Please try again.', 'code': 'TIMEOUT'}), 504
+
     except Exception as e:
+        logger.exception('Unexpected error analyzing %s', clean_url)
         return jsonify({'error': f'Unexpected error: {str(e)[:100]}', 'code': 'UNKNOWN'}), 500

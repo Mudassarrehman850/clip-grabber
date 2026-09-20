@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
 
 const PlatformPill = ({ name, color, icon }) => (
@@ -17,19 +18,12 @@ export default function Header() {
   return (
     <header className="relative pt-12 pb-10 sm:pt-16 sm:pb-12 text-center overflow-visible">
       
-      {/* Controls: Theme Toggle & LinkedIn */}
-      <div className="absolute top-4 right-0 sm:top-6 flex items-center gap-3">
-        <a 
-          href="https://www.linkedin.com/in/mudassar-rehman-2558253b2" 
-          target="_blank" 
-          rel="noreferrer"
-          className="p-2.5 rounded-xl bg-bg-card border border-border-color text-text-secondary hover:text-[#0077B5] hover:border-[#0077B5]/50 transition-all duration-300 shadow-sm"
-          title="Connect on LinkedIn"
-        >
-          <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
-            <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
-          </svg>
-        </a>
+      {/* Controls: nav links, theme toggle */}
+      <div className="absolute top-4 right-0 sm:top-6 flex items-center gap-4">
+        <div className="hidden sm:flex items-center gap-4 text-xs font-semibold text-text-secondary uppercase tracking-wider">
+          <Link to="/about" className="hover:text-brand transition-colors">About</Link>
+          <Link to="/faq" className="hover:text-brand transition-colors">FAQ</Link>
+        </div>
         <ThemeToggle />
       </div>
 

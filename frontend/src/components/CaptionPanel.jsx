@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
-
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+import { exportCaption } from '../utils/api';
 
 // ── Icons ──────────────────────────────────────────
 const CopyIcon = () => (
@@ -152,7 +150,7 @@ export default function CaptionPanel({ metadata, url }) {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const resp = await axios.post(`${API_BASE}/api/caption/export`, { url }, { responseType: 'blob' });
+      const resp = await exportCaption(url);
       const blobUrl = window.URL.createObjectURL(resp.data);
       const a = document.createElement('a');
       a.href = blobUrl;

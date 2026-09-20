@@ -8,11 +8,14 @@ Images are force-converted to proper JPG (or WebP) via Pillow — no JFIF issues
 import os
 import re
 import io
+import logging
 import time
 import zipfile
 import requests
 import instaloader
 from typing import Optional
+
+from config import DOWNLOAD_FOLDER
 
 try:
     from PIL import Image as PILImage
@@ -20,7 +23,7 @@ try:
 except ImportError:
     HAS_PILLOW = False
 
-DOWNLOAD_FOLDER = '/tmp/social_dl_cache'
+logger = logging.getLogger(__name__)
 
 IG_DL_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
@@ -134,8 +137,8 @@ def extract_post_metadata(url: str) -> dict:
                     'video_url': node.video_url if node.is_video else None,
                     'image_url': node.display_url,
                 })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug('Could not build carousel slide previews: %s', e)
 
     # ── Main thumbnail ────────────────────────────────────────
     raw_thumb_url = post.url
@@ -342,7 +345,8 @@ def _dl_carousel_zip(post, shortcode: str, timestamp: str) -> dict:
                         r = _dl_image(node.display_url, slide_ts, f'slide_{i+1}', fmt='jpg')
                         zf.write(r['filepath'], f'slide_{i+1:02d}.jpg')
                     tmp_files.append(r['filepath'])
-                except Exception:
+                except Exception as e:
+                    logger.debug('Skipping carousel slide %d: %s', i, e)
                     continue
         except Exception as e:
             raise ValueError(f"Failed to download carousel: {str(e)[:100]}")
@@ -350,8 +354,8 @@ def _dl_carousel_zip(post, shortcode: str, timestamp: str) -> dict:
     for fp in tmp_files:
         try:
             os.remove(fp)
-        except Exception:
-            pass
+        except OSError as e:
+            logger.warning('Failed to remove temp carousel file %s: %s', fp, e)
 
     if not zipfile.ZipFile(zip_path).namelist():
         raise ValueError("Could not download any slides from this carousel")

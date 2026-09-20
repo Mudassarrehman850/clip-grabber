@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # yt-dlp breaks against live platforms as they change; check weekly so
+  # extraction failures get caught (and fixed by an update) quickly instead
+  # of silently piling up in production.
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "backend"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"
+      - "frontend"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

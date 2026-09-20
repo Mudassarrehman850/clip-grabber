@@ -1,15 +1,3 @@
----
-title: ClipGrabber API
-title: ClipGrabber / SocialDL
-emoji: 🎥
-colorFrom: indigo
-colorTo: blue
-sdk: docker
-app_port: 7860
-pinned: false
----
-# ClipGrabber Backend API
-Social Media Downloader Backend (YouTube, Instagram, TikTok, etc.)
 # 🎥 ClipGrabber (SocialDL)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
@@ -88,5 +76,29 @@ social-dl/
 │   └── tailwind.config.js # Tailwind CSS configuration
 └── README.md              # Project documentation
 ```
+## 🧪 Testing
+```bash
+cd backend
+pip install -r requirements.txt
+pytest -q
+```
+CI runs the backend test suite and the frontend production build on every push/PR (`.github/workflows/ci.yml`).
+
+## ⬆️ Keeping yt-dlp current
+`yt-dlp` breaks against live platforms as YouTube/Instagram/etc. change their sites, so `backend/requirements.txt`
+pins an exact version rather than an open range. `.github/dependabot.yml` checks for a new `yt-dlp` release
+weekly and opens a PR automatically — review and merge those promptly, since a stale `yt-dlp` is the most common
+cause of "downloads suddenly stopped working."
+
+## ☁️ Deployment
+The backend deploys to Render.com's free tier via `backend/render.yaml` (single web service, threaded gunicorn
+worker, `/health` endpoint for uptime checks). Set `CORS_ORIGIN` to your deployed frontend's origin and, if you
+want cookie-gated extraction, one or more of `YT_COOKIES` / `IG_COOKIES` / `TIKTOK_COOKIES` / `FB_COOKIES`.
+
+The frontend is a static build (`npm run build`) deployable to any static host. Set `REACT_APP_API_URL` to the
+backend's URL at build time if frontend and backend are on different domains, and `REACT_APP_SITE_URL` to the
+real domain for correct SEO metadata. See `frontend/.env.example` for the full list, including AdSense/Adsterra
+env vars — both ad networks are disabled by default until their respective keys are set.
+
 ## 📝 Disclaimer
 This tool is intended for educational purposes and personal use only. Please respect the copyright and terms of service of the respective platforms when downloading content.

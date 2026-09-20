@@ -19,6 +19,9 @@ function HistoryItem({ item, onSelect }) {
             alt=""
             onError={() => setImgErr(true)}
             className="w-full h-full object-cover transition-transform group-hover:scale-110"
+            loading="lazy"
+            width={64}
+            height={48}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-xl bg-brand/5"

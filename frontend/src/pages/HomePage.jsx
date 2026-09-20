@@ -1,4 +1,5 @@
 import React, { useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { useDownloader } from '../hooks/useDownloader';
 import URLInput from '../components/URLInput';
 import PreviewCard from '../components/PreviewCard';
@@ -14,26 +15,8 @@ import AdSlot from '../components/AdSlot';
 // ── Ad slot IDs — replace with your real AdSense slot IDs ──
 const AD_SLOTS = {
   topBanner:    process.env.REACT_APP_AD_SLOT_TOP    || '',
-  midBanner:    process.env.REACT_APP_AD_SLOT_MID    || '',
   bottomBanner: process.env.REACT_APP_AD_SLOT_BOTTOM || '',
-  sidebar:      process.env.REACT_APP_AD_SLOT_SIDE   || '',
 };
-
-function BetaBanner() {
-  return (
-    <div className="relative z-50 bg-brand/10 border-b border-brand/20 backdrop-blur-md">
-      <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-center gap-3 text-center">
-        <span className="flex h-2 w-2 relative flex-shrink-0">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-brand"></span>
-        </span>
-        <p className="text-[0.65rem] sm:text-xs font-black text-text-primary uppercase tracking-[0.1em]">
-          <span className="text-brand">Notice:</span> Server upgrade in progress. YouTube & Instagram downloads may be unstable.
-        </p>
-      </div>
-    </div>
-  );
-}
 
 export default function HomePage() {
   const { state, analyze, download, reset } = useDownloader();
@@ -46,9 +29,7 @@ export default function HomePage() {
   const hasResult       = ['ready', 'downloading', 'error'].includes(status);
 
   return (
-    <div className="min-h-screen bg-bg-page relative transition-colors duration-500 overflow-x-hidden">
-      <BetaBanner />
-      
+    <div className="min-h-screen bg-bg-page relative overflow-x-hidden">
       {/* Dynamic Background Elements */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-brand/5 blur-[120px] rounded-full animate-pulse-slow"></div>
@@ -81,8 +62,6 @@ export default function HomePage() {
             {(status === 'ready' || status === 'downloading') && metadata && (
                 <div className="space-y-10 animate-fade-in">
                     <PreviewCard metadata={metadata} platform={metadata.platform} />
-
-                    <AdSlot slot={AD_SLOTS.midBanner} style="banner" />
 
                     <DownloadButtons
                         formats={metadata.formats || []}
@@ -167,11 +146,11 @@ function HowItWorks() {
         </div>
       </div>
 
-      <div className="space-y-6">
-        <SectionTitle>Frequently Asked Questions</SectionTitle>
-        <div className="grid gap-3">
-            {FAQ_ITEMS.map((item, i) => <FAQItem key={i} {...item} />)}
-        </div>
+      <div className="text-center">
+        <Link to="/faq" className="inline-flex items-center gap-2 text-sm font-semibold text-brand hover:text-brand-hover transition-colors">
+            Read the full FAQ
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </Link>
       </div>
     </div>
   );
@@ -205,13 +184,6 @@ function MonetizationSection() {
             </a>
         </div>
 
-        <div className="pt-8 border-t border-border-color">
-            <p className="text-[0.65rem] font-bold text-text-muted uppercase tracking-[0.2em] mb-4">Protect your privacy</p>
-            <a href="REPLACE_WITH_YOUR_AFFILIATE_LINK" target="_blank" rel="noreferrer sponsored"
-            className="inline-flex items-center gap-3 px-6 py-3 rounded-xl text-xs font-bold transition-all hover:bg-brand/10 text-brand border border-brand/20">
-            🔒 Get NordVPN & Unblock Geo-Restricted Content
-            </a>
-        </div>
       </div>
     </div>
   );
@@ -251,39 +223,7 @@ function SEOContent() {
 }
 
 
-// ── FAQ data ──────────────────────────────────────────────────
-const FAQ_ITEMS = [
-  { q: 'Is ClipGrabber free to use?', a: 'Yes, completely free. No signup, no limits, no hidden fees.' },
-  { q: 'Is it safe to use?', a: 'Yes. We don\'t store your downloads, don\'t track your activity, and don\'t require any personal information.' },
-  { q: 'Why is Instagram not working?', a: 'Instagram regularly updates its security. Public Reels work without login. Our system automatically handles most public posts.' },
-  { q: 'Can I download private videos?', a: 'No. ClipGrabber only works with publicly accessible content. Private videos and stories behind login walls are not supported.' },
-  { q: 'What formats are supported?', a: 'MP4 for videos, MP3 for audio, JPG/WebP for images, and ZIP for carousels.' },
-  { q: 'Is this legal?', a: 'Downloading publicly available content for personal use is generally acceptable. Always respect copyright and platform terms of service.' },
-];
-
 // ── Shared UI Utilities ───────────────────────────────────────
-
-function FAQItem({ q, a }) {
-  const [open, setOpen] = React.useState(false);
-  return (
-    <div className="premium-card overflow-hidden">
-      <button onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-6 py-5 text-left text-sm font-bold text-text-primary hover:text-brand transition-all duration-300">
-        {q}
-        <div className={`flex-shrink-0 w-8 h-8 rounded-full border border-border-color flex items-center justify-center transition-all duration-300 ${open ? 'rotate-180 bg-brand text-white border-brand' : ''}`}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-                <polyline points="6 9 12 15 18 9"/>
-            </svg>
-        </div>
-      </button>
-      {open && (
-        <div className="px-6 pb-6 text-sm text-text-secondary font-medium leading-relaxed animate-fade-in">
-          <p className="pt-2">{a}</p>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function SectionTitle({ children }) {
   return (

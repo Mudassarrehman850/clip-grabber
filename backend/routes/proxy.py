@@ -1,6 +1,9 @@
+import logging
+
 from flask import Blueprint, request, Response, jsonify
 import requests
-import hashlib
+
+logger = logging.getLogger(__name__)
 
 proxy_bp = Blueprint('proxy', __name__)
 
@@ -75,4 +78,5 @@ def proxy_image():
     except requests.exceptions.HTTPError as e:
         return jsonify({'error': f'CDN returned {e.response.status_code}'}), 502
     except Exception as e:
+        logger.warning('Proxy image fetch failed for %s: %s', img_url, e)
         return jsonify({'error': f'Proxy error: {str(e)[:80]}'}), 500

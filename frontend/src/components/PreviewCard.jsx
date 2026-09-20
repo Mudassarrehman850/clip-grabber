@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { PLATFORMS, formatNumber, formatDate } from '../utils/helpers';
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+const API_BASE = process.env.REACT_APP_API_URL || '';
 
 function resolveThumbnail(url) {
   if (!url) return null;
@@ -115,6 +115,9 @@ export default function PreviewCard({ metadata, platform }) {
                 onError={() => setImgErr(true)}
                 className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                 crossOrigin="anonymous"
+                loading="lazy"
+                width={176}
+                height={176}
               />
             ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center opacity-20"
@@ -216,6 +219,9 @@ function SlideThumbnail({ slide, index, platformColor }) {
             onError={() => setErr(true)}
             className="w-full h-full object-cover transition-transform group-hover:scale-110"
             crossOrigin="anonymous"
+            loading="lazy"
+            width={96}
+            height={96}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-xl bg-brand/5" style={{ color: platformColor }}>

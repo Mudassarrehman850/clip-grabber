@@ -2,10 +2,16 @@ import yt_dlp
 import os
 import re
 import time
+import logging
 import zipfile
 import requests
 from typing import Optional
+from cachetools import TTLCache
 from bs4 import BeautifulSoup
+
+from config import DOWNLOAD_FOLDER, YTDLP_PROXY, COOKIE_ENV_VARS, METADATA_CACHE_TTL
+
+logger = logging.getLogger(__name__)
 
 # Instaloader fallback for /p/ posts (imported lazily to avoid hard dep errors)
 def _try_instaloader_metadata(url: str) -> dict:
@@ -28,8 +34,6 @@ def _is_post_url(url: str) -> bool:
     import re as _re
     return bool(_re.search(r'/p/[A-Za-z0-9_-]+', url))
 
-
-DOWNLOAD_FOLDER = '/tmp/social_dl_cache'
 
 IG_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
@@ -95,20 +99,39 @@ def _clean_error(e: Exception) -> str:
     return cleaned[:200]
 
 
-def _get_ydl_opts_base(extra: dict = None) -> dict:
+# Cookie files are written once at process startup (not per-request) and reused.
+# Any of YT_COOKIES / IG_COOKIES / TIKTOK_COOKIES / FB_COOKIES may be set with
+# Netscape-format cookie file contents.
+_cookie_paths: dict[str, Optional[str]] = {}
+
+
+def _init_cookie_files():
+    os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+    for platform, env_var in COOKIE_ENV_VARS.items():
+        raw = os.environ.get(env_var)
+        if not raw:
+            _cookie_paths[platform] = None
+            continue
+        path = os.path.join(DOWNLOAD_FOLDER, f'.{platform}_cookies.txt')
+        try:
+            with open(path, 'w') as f:
+                f.write(raw)
+            _cookie_paths[platform] = path
+        except OSError as e:
+            logger.warning('Could not write cookie file for %s: %s', platform, e)
+            _cookie_paths[platform] = None
+
+
+def _cookie_path_for(platform: str) -> Optional[str]:
+    return _cookie_paths.get(platform)
+
+
+_init_cookie_files()
+
+
+def _get_ydl_opts_base(extra: dict = None, platform: str = 'youtube') -> dict:
     headers = GENERIC_HEADERS.copy()
     headers['User-Agent'] = random.choice(USER_AGENTS)
-    
-    # Handle YouTube Cookies from Secrets
-    cookie_path = None
-    yt_cookies = os.environ.get('YT_COOKIES')
-    if yt_cookies:
-        cookie_path = '/tmp/youtube_cookies.txt'
-        try:
-            with open(cookie_path, 'w') as f:
-                f.write(yt_cookies)
-        except Exception:
-            cookie_path = None
 
     opts = {
         'quiet': True,
@@ -118,11 +141,10 @@ def _get_ydl_opts_base(extra: dict = None) -> dict:
         'socket_timeout': 60,
         'retries': 10,
         'http_headers': headers,
-        'nocheckcertificate': True,
         'legacy_server_connect': True,
         'source_address': '0.0.0.0', # Force IPv4
         'geo_bypass': True,
-        'cookiefile': cookie_path,
+        'cookiefile': _cookie_path_for(platform),
         'extractor_args': {
             'youtube': {
                 'player_client': ['android', 'web'],
@@ -134,6 +156,8 @@ def _get_ydl_opts_base(extra: dict = None) -> dict:
             'Connection: keep-alive'
         ],
     }
+    if YTDLP_PROXY:
+        opts['proxy'] = YTDLP_PROXY
     if extra:
         opts.update(extra)
     return opts
@@ -143,6 +167,7 @@ def _get_ydl_opts_instagram(extra: dict = None) -> dict:
     """Instagram-specific ydl opts with mobile UA and relaxed options."""
     opts = _get_ydl_opts_base()
     opts['http_headers'] = IG_HEADERS.copy()
+    opts['cookiefile'] = _cookie_path_for('instagram')
     # Allow extracting image-only posts
     opts['allow_playlist_files'] = True
     if extra:
@@ -154,12 +179,7 @@ def _get_ydl_opts_facebook(extra: dict = None) -> dict:
     """Facebook-specific ydl opts with specific headers and optional cookies."""
     opts = _get_ydl_opts_base()
     opts['http_headers'] = FB_HEADERS.copy()
-    
-    # Check for cookie file (user can provide this if needed)
-    cookie_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'facebook_cookies.txt')
-    if os.path.exists(cookie_path):
-        opts['cookiefile'] = cookie_path
-        
+    opts['cookiefile'] = _cookie_path_for('facebook')
     if extra:
         opts.update(extra)
     return opts
@@ -169,11 +189,27 @@ def _get_ydl_opts_facebook(extra: dict = None) -> dict:
 #  METADATA EXTRACTION
 # ─────────────────────────────────────────────
 
+_metadata_cache: TTLCache = TTLCache(maxsize=500, ttl=METADATA_CACHE_TTL)
+
+
 def extract_metadata(url: str, platform: str, content_type: str) -> dict:
     """
     Extract metadata from a URL without downloading the media.
     Handles: videos, images, carousels (multi-image), profiles.
+    Results are cached briefly so repeated analyze/caption/download calls
+    for the same URL don't each re-scrape the source platform from scratch.
     """
+    cache_key = (url, platform, content_type)
+    cached = _metadata_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = _extract_metadata_uncached(url, platform, content_type)
+    _metadata_cache[cache_key] = result
+    return result
+
+
+def _extract_metadata_uncached(url: str, platform: str, content_type: str) -> dict:
     # Force mobile subdomain for Facebook to bypass some bot detection
     if platform == 'facebook' and 'www.facebook.com' in url:
         url = url.replace('www.facebook.com', 'm.facebook.com')
@@ -181,7 +217,7 @@ def extract_metadata(url: str, platform: str, content_type: str) -> dict:
     if platform == 'instagram':
         return _extract_instagram_metadata(url, content_type)
 
-    ydl_opts = _get_ydl_opts_base({'skip_download': True, 'writeinfojson': False})
+    ydl_opts = _get_ydl_opts_base({'skip_download': True, 'writeinfojson': False}, platform=platform)
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -210,6 +246,7 @@ def extract_metadata(url: str, platform: str, content_type: str) -> dict:
     except Exception as e:
         if platform in ('facebook', 'pinterest', 'instagram'):
             return _extract_og_metadata(url, platform, content_type)
+        logger.exception("Unexpected error extracting metadata for %s", url)
         raise ValueError(f"Failed to extract media info: {_clean_error(e)}")
 
 
@@ -394,8 +431,8 @@ def _extract_instagram_metadata(url: str, content_type: str) -> dict:
                 return _try_instaloader_metadata(url)
             except (PermissionError, ValueError) as il_err:
                 raise il_err
-            except Exception:
-                pass  # fall through to original error
+            except Exception as _e:
+                logger.debug("Non-fatal error, continuing: %s", _e)
         raise
     except yt_dlp.utils.DownloadError as e:
         mapped = _map_download_error(e)
@@ -404,8 +441,8 @@ def _extract_instagram_metadata(url: str, content_type: str) -> dict:
                 return _try_instaloader_metadata(url)
             except (PermissionError, ValueError) as il_err:
                 raise il_err
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("Non-fatal error, continuing: %s", _e)
         raise mapped
     except Exception as e:
         if _is_post_url(url):
@@ -413,8 +450,9 @@ def _extract_instagram_metadata(url: str, content_type: str) -> dict:
                 return _try_instaloader_metadata(url)
             except (PermissionError, ValueError) as il_err:
                 raise il_err
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("Non-fatal error, continuing: %s", _e)
+        logger.exception("Unexpected error extracting Instagram metadata for %s", url)
         raise ValueError(f"Failed to extract Instagram info: {_clean_error(e)}")
 
 
@@ -631,46 +669,72 @@ def _extract_formats(info: dict, platform: str, content_type: str) -> list:
 #  DOWNLOAD DISPATCH
 # ─────────────────────────────────────────────
 
+def _make_progress_hook(progress_cb):
+    """Build a yt-dlp progress_hooks callback that reports percent via progress_cb(percent, message)."""
+    if not progress_cb:
+        return None
+
+    def hook(d):
+        try:
+            if d.get('status') == 'downloading':
+                total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+                downloaded = d.get('downloaded_bytes') or 0
+                percent = min(99.0, (downloaded / total * 100)) if total else 0.0
+                progress_cb(percent, 'Downloading...')
+            elif d.get('status') == 'finished':
+                progress_cb(99.0, 'Processing...')
+        except Exception as _e:
+            logger.debug("Non-fatal error in progress hook: %s", _e)
+
+    return hook
+
+
 def download_media(url: str, format_id: str, platform: str, content_type: str,
-                   slide_index: int = None) -> dict:
+                   slide_index: int = None, progress_cb=None) -> dict:
     """
     Download media and return { filepath, filename, ext, mime_type }.
     Handles all format_ids including Instagram carousel slides and ZIP.
+    `progress_cb(percent, message)`, if given, is called with progress updates
+    (best-effort — only the direct video/audio download paths report real
+    byte progress; other paths just report start/finish).
     """
     os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
     timestamp = str(int(time.time() * 1000))
     output_template = os.path.join(DOWNLOAD_FOLDER, f'{timestamp}_%(id)s.%(ext)s')
+
+    if progress_cb:
+        progress_cb(1, 'Starting...')
 
     try:
         if format_id == 'thumbnail':
             return _download_thumbnail(url, timestamp)
 
         if format_id == 'audio_320':
-            return _download_audio(url, output_template, timestamp, quality='320')
+            return _download_audio(url, output_template, timestamp, quality='320', progress_cb=progress_cb)
 
         if format_id == 'audio_mp3':
-            return _download_audio(url, output_template, timestamp, quality='128')
+            return _download_audio(url, output_template, timestamp, quality='128', progress_cb=progress_cb)
 
         if format_id == 'video_720':
-            return _download_video(url, output_template, timestamp, quality='720')
+            return _download_video(url, output_template, timestamp, quality='720', progress_cb=progress_cb, platform=platform)
 
         if format_id == 'video_nowm':
-            return _download_tiktok_nowatermark(url, output_template, timestamp)
+            return _download_tiktok_nowatermark(url, output_template, timestamp, progress_cb=progress_cb)
 
         if format_id in ('ig_image', 'ig_image_webp'):
             # Always use instaloader for /p/ posts (handles conversion via Pillow)
             if _is_post_url(url):
                 try:
                     return _try_instaloader_download(url, format_id)
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("Non-fatal error, continuing: %s", _e)
             return _download_instagram_image(url, timestamp)
 
         if format_id == 'ig_video':
             # Instaloader-sourced video download
             if _is_post_url(url):
                 return _try_instaloader_download(url, 'ig_video')
-            return _download_video(url, output_template, timestamp, quality='best')
+            return _download_video(url, output_template, timestamp, quality='best', platform=platform)
 
         if format_id == 'profile_pic':
             return _download_instagram_image(url, timestamp)
@@ -680,8 +744,8 @@ def download_media(url: str, format_id: str, platform: str, content_type: str,
             if _is_post_url(url):
                 try:
                     return _try_instaloader_download(url, 'carousel_zip')
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("Non-fatal error, continuing: %s", _e)
             return _download_carousel_zip(url, timestamp)
 
         if format_id.startswith('slide_'):
@@ -690,14 +754,14 @@ def download_media(url: str, format_id: str, platform: str, content_type: str,
             if _is_post_url(url):
                 try:
                     return _try_instaloader_download(url, format_id)
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.debug("Non-fatal error, continuing: %s", _e)
             return _download_carousel_slide(url, idx, timestamp)
 
         if format_id == 'video_sd':
             if platform == 'facebook':
-                return _download_facebook_video(url, output_template, timestamp, quality='sd')
-            return _download_video(url, output_template, timestamp, quality='sd')
+                return _download_facebook_video(url, output_template, timestamp, quality='sd', progress_cb=progress_cb)
+            return _download_video(url, output_template, timestamp, quality='sd', progress_cb=progress_cb, platform=platform)
 
         if format_id == 'fb_image':
             return _download_og_image(url, timestamp, FB_HEADERS)
@@ -716,17 +780,17 @@ def download_media(url: str, format_id: str, platform: str, content_type: str,
         if _is_post_url(url):
             try:
                 return _try_instaloader_download(url, 'video_best')
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.debug("Non-fatal error, continuing: %s", _e)
 
         # Platform-specific best video routing
         if platform == 'facebook':
-            return _download_facebook_video(url, output_template, timestamp, quality='best')
+            return _download_facebook_video(url, output_template, timestamp, quality='best', progress_cb=progress_cb)
         if platform == 'pinterest':
-            return _download_pinterest_video(url, output_template, timestamp)
+            return _download_pinterest_video(url, output_template, timestamp, progress_cb=progress_cb)
 
         # Default: best video
-        return _download_video(url, output_template, timestamp, quality='best')
+        return _download_video(url, output_template, timestamp, quality='best', progress_cb=progress_cb, platform=platform)
 
     except yt_dlp.utils.DownloadError as e:
         # One last try with manual fallback for downloads
@@ -738,12 +802,13 @@ def download_media(url: str, format_id: str, platform: str, content_type: str,
                     target = next((f for f in meta['formats'] if f['id'] == format_id), meta['formats'][0])
                     if target.get('url'):
                         return _download_direct_url(target['url'], timestamp, target['type'])
-            except:
-                pass
+            except Exception as _e:
+                logger.debug("Non-fatal error, continuing: %s", _e)
         raise _map_download_error(e)
     except (ValueError, PermissionError, FileNotFoundError):
         raise
     except Exception as e:
+        logger.exception("Unexpected error downloading %s (format=%s)", url, format_id)
         raise ValueError(f"Download error: {_clean_error(e)}")
 
 
@@ -768,7 +833,7 @@ def _download_direct_url(url: str, timestamp: str, media_type: str) -> dict:
 #  DOWNLOAD IMPLEMENTATIONS
 # ─────────────────────────────────────────────
 
-def _download_video(url: str, output_template: str, timestamp: str, quality: str = 'best') -> dict:
+def _download_video(url: str, output_template: str, timestamp: str, quality: str = 'best', progress_cb=None, platform: str = 'youtube') -> dict:
     if quality == '720':
         fmt = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720]/best'
     elif quality == 'sd':
@@ -776,12 +841,14 @@ def _download_video(url: str, output_template: str, timestamp: str, quality: str
     else:
         fmt = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best'
 
+    hook = _make_progress_hook(progress_cb)
     ydl_opts = _get_ydl_opts_base({
         'format': fmt,
         'outtmpl': output_template,
         'merge_output_format': 'mp4',
         'postprocessors': [{'key': 'FFmpegVideoConvertor', 'preferedformat': 'mp4'}],
-    })
+        **({'progress_hooks': [hook]} if hook else {}),
+    }, platform=platform)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.extract_info(url, download=True)
@@ -790,15 +857,17 @@ def _download_video(url: str, output_template: str, timestamp: str, quality: str
     return {'filepath': filepath, 'filename': f'video_{timestamp}.mp4', 'ext': 'mp4', 'mime_type': 'video/mp4'}
 
 
-def _download_facebook_video(url: str, output_template: str, timestamp: str, quality: str = 'best') -> dict:
+def _download_facebook_video(url: str, output_template: str, timestamp: str, quality: str = 'best', progress_cb=None) -> dict:
     """Download Facebook video with specialized fallback logic."""
     fmt = 'bestvideo[ext=mp4]+bestaudio/best' if quality == 'best' else 'worst'
+    hook = _make_progress_hook(progress_cb)
     ydl_opts = _get_ydl_opts_facebook({
         'format': fmt,
         'outtmpl': output_template,
         'merge_output_format': 'mp4',
+        **({'progress_hooks': [hook]} if hook else {}),
     })
-    
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.extract_info(url, download=True)
@@ -823,75 +892,16 @@ def _download_facebook_video(url: str, output_template: str, timestamp: str, qua
     return {'filepath': filepath, 'filename': f'fb_video_{timestamp}.mp4', 'ext': 'mp4', 'mime_type': 'video/mp4'}
 
 
-def _download_facebook_photo(url: str, timestamp: str) -> dict:
-    """Scrape and download high-res Facebook photo via og:image."""
-    resp = requests.get(url, headers=FB_HEADERS, timeout=25)
-    resp.raise_for_status()
-    
-    soup = BeautifulSoup(resp.text, 'html.parser')
-    og_image = soup.find('meta', property='og:image')
-    img_url = og_image['content'] if og_image else None
-    
-    if not img_url:
-        raise ValueError("Could not find image in this Facebook post page source")
-    
-    # Download the image content
-    img_resp = requests.get(img_url, headers=FB_HEADERS, timeout=25)
-    img_resp.raise_for_status()
-    
-    filepath = os.path.join(DOWNLOAD_FOLDER, f'{timestamp}_fb_photo.jpg')
-    with open(filepath, 'wb') as f:
-        f.write(img_resp.content)
-        
-    return {
-        'filepath': filepath, 
-        'filename': f'fb_photo_{timestamp}.jpg', 
-        'ext': 'jpg', 
-        'mime_type': 'image/jpeg'
-    }
-
-
-def _download_pinterest_image(url: str, timestamp: str) -> dict:
-    """Scrape and download high-res Pinterest image via og:image."""
-    resp = requests.get(url, headers=PINTEREST_HEADERS, timeout=20)
-    resp.raise_for_status()
-    
-    soup = BeautifulSoup(resp.text, 'html.parser')
-    og_image = soup.find('meta', property='og:image')
-    img_url = og_image['content'] if og_image else None
-    
-    if not img_url:
-        raise ValueError("Could not extract image from this Pinterest pin")
-    
-    # Try to find high-res version if URL looks like a thumbnail (Pinterest specific)
-    # thumbnail: i.pinimg.com/236x/...
-    # original: i.pinimg.com/originals/...
-    if 'pinimg.com/' in img_url:
-        img_url = img_url.replace('/236x/', '/originals/').replace('/474x/', '/originals/').replace('/736x/', '/originals/')
-
-    img_resp = requests.get(img_url, headers=PINTEREST_HEADERS, timeout=25)
-    img_resp.raise_for_status()
-    
-    filepath = os.path.join(DOWNLOAD_FOLDER, f'{timestamp}_pin.jpg')
-    with open(filepath, 'wb') as f:
-        f.write(img_resp.content)
-        
-    return {
-        'filepath': filepath, 
-        'filename': f'pin_{timestamp}.jpg', 
-        'ext': 'jpg', 
-        'mime_type': 'image/jpeg'
-    }
-
-
-def _download_pinterest_video(url: str, output_template: str, timestamp: str) -> dict:
+def _download_pinterest_video(url: str, output_template: str, timestamp: str, progress_cb=None) -> dict:
     """Download Pinterest video with og:video fallback."""
     try:
         # Try yt-dlp first
+        hook = _make_progress_hook(progress_cb)
         ydl_opts = _get_ydl_opts_base({
             'outtmpl': output_template,
             'merge_output_format': 'mp4',
-        })
+            **({'progress_hooks': [hook]} if hook else {}),
+        }, platform='pinterest')
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.extract_info(url, download=True)
     except Exception as e:
@@ -945,11 +955,13 @@ def _download_og_image(url: str, timestamp: str, headers: dict) -> dict:
     return {'filepath': filepath, 'filename': f'image_{timestamp}.jpg', 'ext': 'jpg', 'mime_type': 'image/jpeg'}
 
 
-def _download_audio(url: str, output_template: str, timestamp: str, quality: str = '128') -> dict:
+def _download_audio(url: str, output_template: str, timestamp: str, quality: str = '128', progress_cb=None) -> dict:
+    hook = _make_progress_hook(progress_cb)
     ydl_opts = _get_ydl_opts_base({
         'format': 'bestaudio/best',
         'outtmpl': output_template,
         'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': quality}],
+        **({'progress_hooks': [hook]} if hook else {}),
     })
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.extract_info(url, download=True)
@@ -971,65 +983,6 @@ def _download_thumbnail(url: str, timestamp: str) -> dict:
     with open(filepath, 'wb') as f:
         f.write(resp.content)
     return {'filepath': filepath, 'filename': f'thumbnail_{timestamp}.jpg', 'ext': 'jpg', 'mime_type': 'image/jpeg'}
-
-
-def _download_generic_image(url: str, output_template: str, timestamp: str) -> dict:
-    """Download image for Facebook photos and Pinterest pins via yt-dlp."""
-    ydl_opts = _get_ydl_opts_base({'skip_download': True})
-    
-    # Custom headers for image retrieval to avoid 403
-    headers = GENERIC_HEADERS.copy()
-    if 'facebook.com' in url or 'fb.watch' in url:
-        headers['Referer'] = 'https://www.facebook.com/'
-    elif 'pinterest' in url:
-        headers['Referer'] = 'https://www.pinterest.com/'
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-        
-        if not info:
-            raise ValueError("Could not extract image info")
-
-        if info.get('_type') == 'playlist':
-            entries = [e for e in (info.get('entries') or []) if e]
-            info = entries[0] if entries else info
-            
-        img_url = info.get('url') or info.get('thumbnail') or _get_best_thumbnail(info)
-        
-        if not img_url:
-            raise ValueError("No image URL found for this post")
-            
-        resp = requests.get(img_url, timeout=25, headers=headers)
-        resp.raise_for_status()
-        
-        # Convert to proper JPG via Pillow
-        try:
-            from PIL import Image as PILImage
-            import io
-            img = PILImage.open(io.BytesIO(resp.content))
-            
-            # Remove Exif/Metadata and ensure RGB for compatibility
-            data = list(img.getdata())
-            img_no_exif = PILImage.new(img.mode, img.size)
-            img_no_exif.putdata(data)
-            
-            if img_no_exif.mode not in ('RGB',):
-                img_no_exif = img_no_exif.convert('RGB')
-                
-            out = io.BytesIO()
-            img_no_exif.save(out, format='JPEG', quality=95, optimize=True)
-            img_bytes = out.getvalue()
-        except Exception:
-            img_bytes = resp.content
-            
-        filepath = os.path.join(DOWNLOAD_FOLDER, f'{timestamp}_image.jpg')
-        with open(filepath, 'wb') as f:
-            f.write(img_bytes)
-            
-        return {'filepath': filepath, 'filename': f'image_{timestamp}.jpg', 'ext': 'jpg', 'mime_type': 'image/jpeg'}
-    except Exception as e:
-        raise ValueError(f"Could not download image: {_clean_error(e)}")
 
 
 def _download_instagram_image(url: str, timestamp: str) -> dict:
@@ -1154,8 +1107,8 @@ def _download_carousel_zip(url: str, timestamp: str) -> dict:
     for fpath in downloaded_files:
         try:
             os.remove(fpath)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("Non-fatal error, continuing: %s", _e)
 
     if not zipfile.ZipFile(zip_path).namelist():
         raise ValueError("Could not download any slides from this post")
@@ -1211,12 +1164,14 @@ def _download_carousel_slide(url: str, slide_index: int, timestamp: str) -> dict
         return {'filepath': fpath, 'filename': f'slide_{slide_index+1}.jpg', 'ext': 'jpg', 'mime_type': 'image/jpeg'}
 
 
-def _download_tiktok_nowatermark(url: str, output_template: str, timestamp: str) -> dict:
+def _download_tiktok_nowatermark(url: str, output_template: str, timestamp: str, progress_cb=None) -> dict:
+    hook = _make_progress_hook(progress_cb)
     ydl_opts = _get_ydl_opts_base({
         'format': 'download_addr-0/bestvideo[vcodec!*=h265]+bestaudio/best',
         'outtmpl': output_template,
         'merge_output_format': 'mp4',
-    })
+        **({'progress_hooks': [hook]} if hook else {}),
+    }, platform='tiktok')
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.extract_info(url, download=True)
     filepath = _find_downloaded_file(timestamp, DOWNLOAD_FOLDER)
@@ -1229,6 +1184,7 @@ def _download_tiktok_nowatermark(url: str, output_template: str, timestamp: str)
 
 def _map_download_error(e: yt_dlp.utils.DownloadError) -> Exception:
     """Convert a yt-dlp DownloadError to a clean typed exception."""
+    logger.warning('yt-dlp DownloadError: %s', e)
     raw = _clean_error(e)
     lower = raw.lower()
     if 'private' in lower or 'login' in lower or 'sign in' in lower or 'not logged in' in lower:
@@ -1271,5 +1227,5 @@ def cleanup_old_files(max_age_seconds: int = 3600):
         try:
             if os.path.isfile(fpath) and (now - os.path.getmtime(fpath)) > max_age_seconds:
                 os.remove(fpath)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.debug("Non-fatal error, continuing: %s", _e)
